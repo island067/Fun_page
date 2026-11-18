@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>双弹飞轮使徒的page</title>
+<style>
+  :root {
+    --font-en: "Outfit", Georgia, "Times New Roman", serif;
+    --font-mono: "Cascadia Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #ffffff; overflow: hidden; }
+  body { -webkit-tap-highlight-color: transparent; }
+
+  .endgame {
+    position: fixed; inset: 0;
+    width: max(100%, 100vw);
+    height: max(100%, 100vh);
+    z-index: 95; overflow: hidden;
+  }
+  /* 纯白底（最初那版就是纯白，没有噪点） */
+  .endgame__bsod { position: absolute; inset: 0; background: #ffffff; z-index: 0; }
+
+  .endgame__words {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: clamp(1.2rem, 5vh, 3rem);
+    padding: 4vw; text-align: center;
+    z-index: 2;                      /* 字在黑块上面，不会被挡 */
+    pointer-events: none;
+  }
+  /* 固定槽位（不可见）：只保证落款不被换字推着上下动 */
+  .endgame__slot {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%;
+    min-height: calc(clamp(2.6rem, 8.6vw, 6.4rem) * 1.05);
+  }
+
+  /* ===== 中央闪词：最初的样子（黑字带辉光、红字 #d21b10） ===== */
+  .endgame__word {
+    font-family: var(--font-en), "SimSun", "Songti SC", "Microsoft YaHei";
+    font-weight: 700;
+    font-size: clamp(2.6rem, 8.6vw, 6.4rem);
+    line-height: 1.05;
+    letter-spacing: .02em;
+    color: #000000;
+    text-shadow: 0 0 10px currentColor, 0 0 30px currentColor, 0 2px 0 rgba(255, 255, 255, .55);
+    animation: word-flash .14s step-end both;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .endgame__word[data-tone="red"] { color: #d21b10; }
+
+  /* 中文整句（新加入的句子用华文中宋） */
+  .endgame__word--zh {
+    font-family: "华文中宋", "STZhongsong", "STZHONGS", "SimSun", "Songti SC", var(--font-en);
+    font-size: clamp(1.15rem, 3.2vw, 2.5rem);
+    line-height: 1.2;
+    letter-spacing: .06em;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  /* 偶发：黑色实心块 */
+  .endgame__word--block {
+    width: clamp(4rem, 24vw, 22rem);
+    height: clamp(1.4rem, 7vw, 4.2rem);
+    background: #000000;
+    color: transparent;
+    text-shadow: none;
+    box-shadow: 0 0 26px rgba(0, 0, 0, .55), 0 0 70px rgba(0, 0, 0, .28);
+  }
+  /* 偶发：一团乱码 */
+  .endgame__word--junk {
+    font-family: var(--font-mono);
+    font-size: clamp(1.6rem, 6vw, 4rem);
+    letter-spacing: .08em;
+  }
+
+  /* ===== 落款：最初那版等宽字 + 红蓝重影 ===== */
+  .endgame__by {
+    position: relative;
+    font-family: "华文中宋", "STZhongsong", "STZHONGS", "SimSun", "Songti SC", "Microsoft YaHei", sans-serif;
+    font-size: clamp(1.35rem, 3.35vw, 2.3rem);
+    letter-spacing: .1em;
+    white-space: nowrap;
+    color: #000000;
+    text-shadow: none;              /* 只有黑字 */
+  }
+
+  @keyframes word-flash {
+    0%   { opacity: 1;   transform: translateX(-7px); }
+    12%  { opacity: .55; transform: translateX(6px); }
+    24%  { opacity: 1;   transform: translateX(-4px); }
+    38%  { opacity: .85; }
+    52%  { opacity: 1;   transform: translateX(3px); }
+    100% { opacity: 1;   transform: none; }
+  }
+
+  /* ===== 最初的装饰：黑块随机四散（在文字下层，不挡字） ===== */
+  .endgame__blacks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+  .endgame__black {
+    position: absolute; display: block;
+    background: #000000;
+    animation: black-flash var(--black-t, 140ms) step-end both;
+  }
+  @keyframes black-flash {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    60%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+/* ===== 六语无意义词 + 乱码符号（与作品一致）===== */
+const GARBLE = '▓▒░█▚▞╳〓※¤§‡†◤◥◣◢◧◨⌗⌁⍟⎋␥';
+const WORDS = {
+  en: ['vurn', 'glim', 'thask', 'quorn', 'murn', 'plask', 'drith', 'skelb'],
+  ko: ['뭉긋', '슬렁', '허릅', '갛믄', '벙긋', '옹긋', '틀븐'],
+  ja: ['ゆらぱ', 'かげぽ', 'ぬばり', 'そよぷ', 'まぼろ', 'とおぱ', 'しずぽ'],
+  hi: ['कफ़ल', 'झमट', 'टुगल', 'सिरो', 'धबल', 'खरघ', 'पिलट'],
+  el: ['ψαλμ', 'κρόμβ', 'λύγδ', 'σφενδ', 'θραβ', 'ξυλμ', 'πρανδ'],
+  la: ['vurnum', 'glimus', 'thasca', 'quornis', 'murnax', 'plascus', 'drither'],
+};
+const LANGS = ['en', 'ko', 'ja', 'hi', 'el', 'la'];
+
+/* ===== 新加入的中文整句（《滕王阁序》节选，一行一帧）+ 英文残句 ===== */
+const ZH_LINES = [
+  '十旬休假　胜友如云',
+  '千里逢迎　高朋满座',
+  '物华天宝　龙光射牛斗之墟',
+  '人杰地灵　徐孺下陈蕃之榻',
+  '雄州雾列，俊采星驰',
+  '台隍枕夷夏之交，宾主尽东南之美',
+  '家君作宰，路出名区',
+  '童子何知，躬逢胜饯',
+  '潦水尽而寒潭清，烟光凝而暮山紫',
+  '俨骖騑于上路，访风景于崇阿',
+  '临帝子之长洲，得仙人之旧馆',
+  '层峦耸翠　上出重霄　飞阁流丹　下临无地',
+  '鹤汀凫渚　穷岛屿之萦回',
+  '桂殿兰宫　即冈峦之体势',
+  '披绣闼　俯雕甍',
+  '山原旷其盈视　川泽纡其骇瞩',
+  '闾阎扑地　钟鸣鼎食之家',
+  '舸舰迷津　青雀黄龙之舳',
+  '云销雨霁　彩彻区明',
+  '落霞与孤鹜齐飞　秋水共长天一色',
+  '渔舟唱晚　响穷彭蠡之滨',
+  '雁阵惊寒　声断衡阳之浦',
+  '遥襟甫　逸兴遄飞',
+  '爽籁发而清风生　纤歌凝而白云遏',
+  '睢园绿竹　气凌彭泽之樽',
+  '邺水朱华　光照临川之笔',
+  '穷睇眄于中天　极娱游于暇日',
+  '天高地迥　觉宇宙之无穷',
+  '兴尽悲来　识盈虚之有数',
+  '关山难越　谁悲失路之人',
+  '萍水相逢　尽是他乡之客',
+  '冯唐易老　李广难封',
+  '屈贾谊于长沙　非无圣主　窜梁鸿于海曲　岂乏明时',
+  '所赖君子见机　达人知命',
+  '老当益壮　宁移白首之心　穷且益坚　不坠青云之志',
+  '酌贪泉而觉爽　处涸辙以犹欢　北海虽赊　扶摇可接',
+  '东隅已逝　桑榆非晚',
+  '孟尝高洁　空余报国之情　阮籍猖狂　岂效穷途之哭',
+  '无路请缨　等终军之弱冠　有怀投笔　慕宗悫之长风',
+  '舍簪笏于百龄　奉晨昏于万里',
+  '杨意不逢　抚凌云而自惜　钟期既遇　奏流水以何惭',
+  '胜地不常　盛筵难再　兰亭已矣　梓泽丘墟',
+  '临别赠言　幸承恩于伟饯　登高作赋　是所望于群公',
+  '滕王高阁临江渚　佩玉鸣鸾罢歌舞',
+  '画栋朝飞南浦云　珠帘暮卷西山雨',
+  '闲云潭影日悠悠　物换星移几度秋',
+  '阁中帝子今何在　槛外长江空自流',
+];
+const EXTRA = ZH_LINES.map((t) => ({ text: t, zh: true })).concat([{ text: '?is!and?', zh: false }]);
+
+const pick = (arr) => arr[Math.min(arr.length - 1, Math.floor(Math.random() * arr.length))];
+const foreignWord = () => pick(WORDS[pick(LANGS)]);
+function garbageRun(n) {
+  const k = Math.max(1, n | 0);
+  let s = '';
+  for (let i = 0; i < k; i++) s += GARBLE[Math.floor(Math.random() * GARBLE.length)];
+  return s;
+}
+
+/* ===== 这一屏 ===== */
+const WORD_MS = 100, BLACK_MS = 260, BLACK_LIFE = 420;
+const BY_TEXT = 'By 双弹飞轮使徒';
+
+let root = null, wordsBox = null, slotEl = null, wordEl = null, byEl = null, blackBox = null;
+let wordTimer = null, blackTimer = null;
+
+function closeAll() {
+  [wordTimer, blackTimer].forEach((t) => { if (t) clearInterval(t); });
+  wordTimer = blackTimer = null;
+  if (root && root.parentNode) root.parentNode.removeChild(root);
+  root = wordsBox = slotEl = wordEl = byEl = blackBox = null;
+}
+
+function build() {
+  closeAll();
+  root = document.createElement('div');
+  root.className = 'endgame';
+
+  const bg = document.createElement('div');
+  bg.className = 'endgame__bsod';
+
+  blackBox = document.createElement('div');
+  blackBox.className = 'endgame__blacks';
+  blackBox.setAttribute('aria-hidden', 'true');
+
+  wordsBox = document.createElement('div');
+  wordsBox.className = 'endgame__words';
+  slotEl = document.createElement('div');
+  slotEl.className = 'endgame__slot';
+  byEl = document.createElement('div');
+  byEl.className = 'endgame__by';
+  byEl.textContent = BY_TEXT;
+  wordsBox.append(slotEl, byEl);
+
+  root.append(bg, blackBox, wordsBox);
+  document.getElementById('stage').appendChild(root);
+
+  word();
+  black();
+  wordTimer = setInterval(word, WORD_MS);
+  blackTimer = setInterval(black, BLACK_MS);
+}
+
+/* 中文整句太长时按槽位高度缩一点，保证不换行也不出屏 */
+function fitInSlot(el) {
+  requestAnimationFrame(() => {
+    if (!el.isConnected || !slotEl) return;
+    const avail = slotEl.clientWidth;
+    if (avail && el.scrollWidth > avail) {
+      const cur = parseFloat(getComputedStyle(el).fontSize) || 16;
+      el.style.fontSize = Math.max(9, Math.floor(cur * avail / el.scrollWidth * 0.97)) + 'px';
+    }
+  });
+}
+
+function word() {
+  if (!wordsBox) return;
+  const el = document.createElement('span');
+  const r = Math.random();
+  if (r < 0.14) {
+    el.className = 'endgame__word endgame__word--block';
+    el.dataset.tone = 'white';
+  } else if (r < 0.36) {
+    el.className = 'endgame__word endgame__word--junk';
+    el.dataset.tone = Math.random() < 0.5 ? 'red' : 'white';
+    el.textContent = garbageRun(2 + Math.floor(Math.random() * 5));
+  } else if (Math.random() < 0.42) {
+    const x = pick(EXTRA);
+    el.className = 'endgame__word' + (x.zh ? ' endgame__word--zh' : '');
+    el.dataset.tone = Math.random() < 0.5 ? 'red' : 'white';
+    el.textContent = x.text;
+    if (x.zh) fitInSlot(el);
+  } else {
+    el.className = 'endgame__word';
+    el.dataset.tone = Math.random() < 0.5 ? 'red' : 'white';
+    el.textContent = foreignWord();
+  }
+  if (wordEl) wordEl.remove();
+  slotEl.appendChild(el);
+  wordEl = el;
+  pruneCollisions();
+}
+
+/* 黑块：随机四散（最初的样子），但不许压到字——压到就移除 */
+function black() {
+  if (!blackBox) return;
+  const n = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('i');
+    el.className = 'endgame__black';
+    const w = 1.5 + Math.random() * 24;
+    const h = 1 + Math.random() * 13;
+    el.style.left = (Math.random() * (100 - w)).toFixed(2) + 'vw';
+    el.style.top = (Math.random() * (100 - h)).toFixed(2) + 'vh';
+    el.style.width = w.toFixed(2) + 'vw';
+    el.style.height = h.toFixed(2) + 'vh';
+    el.style.setProperty('--black-t', (70 + Math.random() * 260).toFixed(0) + 'ms');
+    blackBox.appendChild(el);
+    setTimeout(() => el.remove(), BLACK_LIFE);
+  }
+  while (blackBox.childElementCount > 24 && blackBox.firstElementChild) blackBox.firstElementChild.remove();
+  pruneCollisions();
+}
+
+function pruneCollisions() {
+  if (!blackBox) return;
+  const targets = ['.endgame__word', '.endgame__by']
+    .map((sel) => document.querySelector(sel))
+    .filter(Boolean)
+    .map((e) => e.getBoundingClientRect());
+  for (const d of [...blackBox.children]) {
+    const b = d.getBoundingClientRect();
+    const hit = targets.some((a) => !(b.right <= a.left || b.left >= a.right || b.bottom <= a.top || b.top >= a.bottom));
+    if (hit) d.remove();
+  }
+}
+
+let rt = null;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(build, 240); });
+
+build();
+</script>
+</body>
+</html>
